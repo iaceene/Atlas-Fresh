@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server';
-import path from 'path';
-import { parseAtlasWorkbook } from '@/utils/parser/parser';
-import { createEngine } from '@/utils/engine/engine';
+import { getAtlasContext } from '@/utils/atlas-context';
 
-function createPlan(filePath: string) {
-  const data = parseAtlasWorkbook(filePath);
-  return createEngine(data).plan();
-}
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const filePath = path.join(process.cwd(), 'public', 'Atlas_Fresh_Production_Commercial_Data.xlsx');
-    return NextResponse.json({ success: true, plan: createPlan(filePath) });
+    const url = new URL(request.url);
+    const contextId = url.searchParams.get('contextId');
+    const context = await getAtlasContext(contextId);
+
+    return NextResponse.json({
+      success: true,
+      plan: context.plan,
+      contextId: context.contextId,
+      source: context.source,
+    });
 
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

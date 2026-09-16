@@ -44,6 +44,7 @@ interface AiAssistantSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   plan: PlanResult;
+  contextId?: string | null;
   contextQuestion?: string | null;
   contextClientId?: string | null;
 }
@@ -52,6 +53,7 @@ export function AiAssistantSheet({
   open,
   onOpenChange,
   plan,
+  contextId,
   contextQuestion,
   contextClientId,
 }: AiAssistantSheetProps) {
@@ -120,7 +122,13 @@ export function AiAssistantSheet({
     setErrorMessage(null);
 
     try {
-      const res = await askAI(q, contextClientId ? { clientId: contextClientId } : undefined);
+      const res = await askAI(
+        q,
+        {
+          ...(contextClientId ? { clientId: contextClientId } : {}),
+          ...(contextId ? { contextId } : {}),
+        }
+      );
       const assistantMsg: Message = {
         id: `ai-${Date.now()}`,
         role: 'assistant',

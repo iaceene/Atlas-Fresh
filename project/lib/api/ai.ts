@@ -2,11 +2,12 @@ import { AskAiRequest, AskAiResponse } from '@/utils/types';
 
 export async function askAI(
   question: string,
-  options?: { clientId?: string }
+  options?: { clientId?: string; contextId?: string | null }
 ): Promise<AskAiResponse> {
   const payload: AskAiRequest = {
     question,
     ...(options?.clientId ? { clientId: options.clientId } : {}),
+    ...(options?.contextId ? { contextId: options.contextId } : {}),
   };
 
   const response = await fetch('/api/ai-ask', {

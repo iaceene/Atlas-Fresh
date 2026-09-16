@@ -108,11 +108,19 @@ export interface PlanApiResponse {
   success: boolean;
   plan?: PlanResult;
   error?: string;
+  contextId?: string;
+  source?: {
+    kind: 'default' | 'upload';
+    label: string;
+    fileName?: string;
+    createdAt?: string;
+  };
 }
 
 export interface AskAiRequest {
   question: string;
   clientId?: string;
+  contextId?: string;
 }
 
 export interface AskAiResponse {

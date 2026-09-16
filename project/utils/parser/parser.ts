@@ -61,7 +61,22 @@ function toMode(value: unknown, context: string): AcceptanceMode {
 }
 
 export function parseAtlasWorkbook(filePath: string): AtlasData {
+  return parseAtlasWorkbookFromFile(filePath);
+}
+
+export function parseAtlasWorkbookFromFile(filePath: string): AtlasData {
   const workbook = XLSX.readFile(filePath);
+  return parseAtlasWorkbookFromWorkbook(workbook);
+}
+
+export function parseAtlasWorkbookFromBuffer(
+  file: ArrayBuffer | Buffer | Uint8Array
+): AtlasData {
+  const workbook = XLSX.read(file, { type: 'buffer' });
+  return parseAtlasWorkbookFromWorkbook(workbook);
+}
+
+function parseAtlasWorkbookFromWorkbook(workbook: XLSX.WorkBook): AtlasData {
 
   const farms = parseFarms(workbook);
   const clients = parseClients(workbook);

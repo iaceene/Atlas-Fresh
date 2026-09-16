@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PlanResult, ClientResult } from '@/utils/types';
 import { getPlan } from '@/lib/api/data';
+import { uploadWorkbook } from '@/lib/api/upload';
 import { DashboardHeader } from './dashboard-header';
 import { KpiGrid } from './kpi-grid';
 import { QualityDistribution } from './quality-distribution';
@@ -13,8 +14,8 @@ import { ClientDetailsSheet } from './client-details-sheet';
 import { AllocationTable } from './allocation-table';
 import { FarmBalanceTable } from './farm-balance-table';
 import { LoadingDashboard } from './loading-dashboard';
-import { ErrorState } from './error-state';
 import { AiAssistantSheet } from './ai-assistant-sheet';
+import { StartScreen } from './start-screen';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { LayoutDashboard, Users, Wheat, Layers } from 'lucide-react';
 
@@ -22,10 +23,17 @@ interface AtlasDashboardProps {
   initialPlan?: PlanResult | null;
 }
 
+const CONTEXT_STORAGE_KEY = 'atlas-fresh:context-id';
+
 export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
   const [plan, setPlan] = useState<PlanResult | null>(initialPlan || null);
-  const [isLoading, setIsLoading] = useState<boolean>(!initialPlan);
+  const [contextId, setContextId] = useState<string | null>(null);
+  const [sourceLabel, setSourceLabel] = useState<string>('Preloaded workbook');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(Boolean(initialPlan));
 
   // Panels state
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -35,30 +43,78 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview');
 
   // Fetch plan from Next.js API /api/data
-  const loadPlan = useCallback(async () => {
+  const loadPlan = useCallback(async (targetContextId?: string | null) => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await getPlan();
+      const response = await getPlan(targetContextId ?? contextId);
       if (response.success && response.plan) {
         setPlan(response.plan);
+        const resolvedContextId = response.contextId ?? targetContextId ?? null;
+        setContextId(resolvedContextId);
+        setSourceLabel(response.source?.label || (resolvedContextId ? 'Loaded workbook' : 'Preloaded workbook'));
+        if (resolvedContextId) {
+          window.localStorage.setItem(CONTEXT_STORAGE_KEY, resolvedContextId);
+        }
       } else {
         throw new Error(response.error || 'Failed to load plan');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message || "Unable to load today's plan.");
+      setPlan(null);
     } finally {
       setIsLoading(false);
+      setIsReady(true);
     }
-  }, []);
+  }, [contextId]);
 
   useEffect(() => {
     if (initialPlan) return;
-    (async () => {
-      await loadPlan();
-    })();
+
+    const savedContextId = window.localStorage.getItem(CONTEXT_STORAGE_KEY);
+    if (savedContextId) {
+      void loadPlan(savedContextId);
+      return;
+    }
+
+    setIsReady(true);
   }, [initialPlan, loadPlan]);
+
+  const handleContinueWithPreloadedData = useCallback(() => {
+    void loadPlan(null);
+  }, [loadPlan]);
+
+  const handleUploadFile = useCallback(async (file: File) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    setError(null);
+    try {
+      const response = await uploadWorkbook(file, (snapshot) => {
+        setUploadProgress(snapshot.percentage);
+      });
+
+      if (!response.success || !response.plan) {
+        throw new Error(response.error || 'The workbook could not be parsed.');
+      }
+
+      setPlan(response.plan);
+      setContextId(response.contextId ?? null);
+      setSourceLabel(response.source?.label || file.name);
+      setActiveTab('overview');
+
+      if (response.contextId) {
+        window.localStorage.setItem(CONTEXT_STORAGE_KEY, response.contextId);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message || 'The workbook upload failed.');
+      setPlan(null);
+    } finally {
+      setIsUploading(false);
+      setIsReady(true);
+    }
+  }, []);
 
   const handleSelectClient = (client: ClientResult) => {
     setSelectedClient(client);
@@ -78,23 +134,31 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
       {/* Header Bar */}
       <DashboardHeader
         onChatClick={() => setIsChatOpen(true)}
-        onRefresh={loadPlan}
-        isLoading={isLoading}
+        onRefresh={() => void loadPlan()}
+        isLoading={isLoading || isUploading}
         hasPlan={Boolean(plan)}
+        sourceLabel={sourceLabel}
       />
 
       {/* Main Container */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {isLoading && !plan ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 pb-2">
-              <span className="animate-pulse font-medium">Fetching today&apos;s operations allocation plan...</span>
-            </div>
-            <LoadingDashboard />
+        {!isReady && !plan ? (
+          <LoadingDashboard />
+        ) : !plan ? (
+          <div className="space-y-6">
+            {isLoading ? (
+              <LoadingDashboard />
+            ) : (
+              <StartScreen
+                onContinue={handleContinueWithPreloadedData}
+                onUploadFile={handleUploadFile}
+                isUploading={isUploading}
+                uploadProgress={uploadProgress}
+                error={error}
+              />
+            )}
           </div>
-        ) : error && !plan ? (
-          <ErrorState message={error} onRetry={loadPlan} />
-        ) : plan ? (
+        ) : (
           <div className="space-y-6">
             {/* Top KPI Section: Shown globally on the planner */}
             <KpiGrid kpis={plan.kpis} />
@@ -234,7 +298,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
               </TabsContent>
             </Tabs>
           </div>
-        ) : null}
+        )}
       </main>
 
       {/* Client Details Sheet */}
@@ -259,6 +323,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
             }
           }}
           plan={plan}
+          contextId={contextId}
           contextQuestion={aiContextQuestion}
           contextClientId={aiContextClientId}
         />

@@ -9,6 +9,7 @@ interface DashboardHeaderProps {
   onRefresh: () => void;
   isLoading?: boolean;
   hasPlan?: boolean;
+  sourceLabel?: string;
 }
 
 export function DashboardHeader({
@@ -16,6 +17,7 @@ export function DashboardHeader({
   onRefresh,
   isLoading,
   hasPlan,
+  sourceLabel,
 }: DashboardHeaderProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -55,6 +57,12 @@ export function DashboardHeader({
 
         {/* Right: Actions and Status */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {sourceLabel && (
+            <div className="hidden md:flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] text-slate-600">
+              {sourceLabel}
+            </div>
+          )}
+
           {/* Assistant Button */}
           <Button
             id="open-ai-chat-btn"
