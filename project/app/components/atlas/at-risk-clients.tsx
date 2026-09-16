@@ -35,8 +35,8 @@ export function AtRiskClients({ clients, onSelectClient }: AtRiskClientsProps) {
   }
 
   return (
-    <Card id="at-risk-clients-card" className="border-amber-200/90 bg-amber-50/30">
-      <CardHeader className="py-3 px-4 border-b border-amber-200/50 bg-amber-100/40">
+    <Card id="at-risk-clients-card" className="border-amber-200/90 ">
+      <CardHeader className="py-3 px-4 border-b border-amber-200/50 ">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
