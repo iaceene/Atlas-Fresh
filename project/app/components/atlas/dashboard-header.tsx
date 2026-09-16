@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
-import { MessageCircle, RefreshCw } from 'lucide-react';
+import { Building2, MessageCircle, RefreshCw } from 'lucide-react';
 
 interface DashboardHeaderProps {
   onChatClick: () => void;
@@ -37,7 +37,7 @@ export function DashboardHeader({
         {/* Left: Brand and Title */}
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-700 text-white font-bold text-base shadow-xs">
-            AF
+            <Building2 className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
