@@ -29,6 +29,8 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
 
   // Panels state
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [aiContextQuestion, setAiContextQuestion] = useState<string | null>(null);
+  const [aiContextClientId, setAiContextClientId] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<ClientResult | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -60,6 +62,15 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
 
   const handleSelectClient = (client: ClientResult) => {
     setSelectedClient(client);
+  };
+
+  const handleAskAIAboutClient = (client: ClientResult) => {
+    const reasonText = client.reason ? ` The shortage reason is ${client.reason}.` : '';
+    setAiContextClientId(client.client_id);
+    setAiContextQuestion(
+      `Explain this client risk row for ${client.client_id} (${client.client_name}). The client is ${client.status} and the row is part of the Client Fulfillment Overview.${reasonText} Focus on demand_t, allocated_t, remaining_t, requested_segment, and acceptance_mode, and explain why this client is risk / partial / unserved if applicable.`
+    );
+    setIsChatOpen(true);
   };
 
   return (
@@ -233,14 +244,23 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
           allocations={plan.allocations}
           open={Boolean(selectedClient)}
           onOpenChange={(open) => !open && setSelectedClient(null)}
+          onAskAI={handleAskAIAboutClient}
         />
       )}
 
       {plan && (
         <AiAssistantSheet
           open={isChatOpen}
-          onOpenChange={setIsChatOpen}
+          onOpenChange={(open) => {
+            setIsChatOpen(open);
+            if (!open) {
+              setAiContextQuestion(null);
+              setAiContextClientId(null);
+            }
+          }}
           plan={plan}
+          contextQuestion={aiContextQuestion}
+          contextClientId={aiContextClientId}
         />
       )}
     </div>

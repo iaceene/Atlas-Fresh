@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Sheet,
   SheetHeader,
@@ -36,44 +37,65 @@ const createWelcomeMessage = (): Message => ({
   role: 'assistant',
   content:
     'I explain the server-computed plan using Google Gemini. I can answer questions about at-risk clients, farm and segment gaps, and local residuals.',
-  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  timestamp: 'Just now',
 });
 
 interface AiAssistantSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   plan: PlanResult;
+  contextQuestion?: string | null;
+  contextClientId?: string | null;
 }
 
 export function AiAssistantSheet({
   open,
   onOpenChange,
   plan,
+  contextQuestion,
+  contextClientId,
 }: AiAssistantSheetProps) {
   const storageKey = useMemo(
     () => `atlas-ai-chat:${plan.clients.map((client) => client.client_id).join(',')}:${plan.kpis.actual_received_t}`,
     [plan]
   );
-  const [messages, setMessages] = useState<Message[]>(() => {
-    try {
-      const stored = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
-      return stored ? JSON.parse(stored) : [createWelcomeMessage()];
-    } catch {
-      return [createWelcomeMessage()];
-    }
-  });
-  const [isStorageReady, setIsStorageReady] = useState(true);
+  const [messages, setMessages] = useState<Message[]>([createWelcomeMessage()]);
+  const [isStorageReady, setIsStorageReady] = useState(false);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const lastAutoQuestionRef = useRef<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   
 
   useEffect(() => {
-    if (isStorageReady) {
-      window.localStorage.setItem(storageKey, JSON.stringify(messages));
+    setIsStorageReady(false);
+
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      setMessages(stored ? JSON.parse(stored) : [createWelcomeMessage()]);
+    } catch {
+      setMessages([createWelcomeMessage()]);
+    } finally {
+      setIsStorageReady(true);
     }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!isStorageReady) return;
+    window.localStorage.setItem(storageKey, JSON.stringify(messages));
   }, [isStorageReady, messages, storageKey]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const id = window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+
+    return () => window.cancelAnimationFrame(id);
+  }, [open, messages, isLoading, errorMessage]);
 
   const sampleQuestions = [
     'Which clients are at risk and why?',
@@ -81,7 +103,7 @@ export function AiAssistantSheet({
     'Why is fruit going local and what is its estimated value?',
   ];
 
-  const handleSend = async (questionText?: string) => {
+  const handleSend = useCallback(async (questionText?: string) => {
     const q = (questionText || input).trim();
     if (!q || isLoading) return;
 
@@ -98,7 +120,7 @@ export function AiAssistantSheet({
     setErrorMessage(null);
 
     try {
-      const res = await askAI(q);
+      const res = await askAI(q, contextClientId ? { clientId: contextClientId } : undefined);
       const assistantMsg: Message = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
@@ -113,7 +135,19 @@ export function AiAssistantSheet({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [contextClientId, input, isLoading]);
+
+  useEffect(() => {
+    if (!open) {
+      lastAutoQuestionRef.current = null;
+      return;
+    }
+
+    if (!contextQuestion || lastAutoQuestionRef.current === contextQuestion) return;
+
+    lastAutoQuestionRef.current = contextQuestion;
+    void handleSend(contextQuestion);
+  }, [open, contextQuestion, handleSend]);
 
   const handleClearChat = () => {
     setMessages([createWelcomeMessage()]);
@@ -160,7 +194,47 @@ export function AiAssistantSheet({
                       : 'bg-slate-100 text-slate-800 rounded-bl-xs border border-slate-200'
                   }`}
                 >
-                  <p>{msg.content}</p>
+                  {isUser ? (
+                    <p>{msg.content}</p>
+                  ) : (
+                    <div className="prose prose-sm max-w-none prose-slate">
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="m-0 text-xs sm:text-sm">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+                          em: ({ children }) => <em className="italic">{children}</em>,
+                          ul: ({ children }) => <ul className="list-disc list-inside space-y-1 my-2 text-xs sm:text-sm">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 my-2 text-xs sm:text-sm">{children}</ol>,
+                          li: ({ children }) => <li className="ml-0">{children}</li>,
+                          code: ({ children }) => (
+                            <code className="bg-slate-200 text-slate-900 px-1.5 py-0.5 rounded text-[11px] font-mono">
+                              {children}
+                            </code>
+                          ),
+                          pre: ({ children }) => (
+                            <pre className="bg-slate-800 text-white p-3 rounded-lg overflow-x-auto my-2 text-[11px] font-mono">
+                              {children}
+                            </pre>
+                          ),
+                          blockquote: ({ children }) => (
+                            <blockquote className="border-l-4 border-slate-300 pl-3 italic text-slate-600 my-2">
+                              {children}
+                            </blockquote>
+                          ),
+                          h1: ({ children }) => <h1 className="text-sm font-bold mt-2 mb-1 text-slate-900">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-sm font-bold mt-2 mb-1 text-slate-900">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-xs font-bold mt-1 mb-0.5 text-slate-900">{children}</h3>,
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline text-xs sm:text-sm">
+                              {children}
+                            </a>
+                          ),
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  )}
 
                   {/* Sources tag if provided */}
                   {msg.sources && msg.sources.length > 0 && (
@@ -195,6 +269,8 @@ export function AiAssistantSheet({
               </div>
             );
           })}
+
+          <div ref={messagesEndRef} />
 
           {isLoading && (
             <div className="flex gap-3 text-xs sm:text-sm items-center text-slate-500">

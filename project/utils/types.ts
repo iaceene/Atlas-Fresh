@@ -112,6 +112,7 @@ export interface PlanApiResponse {
 
 export interface AskAiRequest {
   question: string;
+  clientId?: string;
 }
 
 export interface AskAiResponse {

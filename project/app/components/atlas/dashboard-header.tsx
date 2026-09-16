@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { MessageCircle, RefreshCw } from 'lucide-react';
 
@@ -17,6 +17,15 @@ export function DashboardHeader({
   isLoading,
   hasPlan,
 }: DashboardHeaderProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const actionDisabled = mounted ? Boolean(isLoading || !hasPlan) : false;
+  const refreshDisabled = mounted ? Boolean(isLoading) : false;
+
   return (
     <header
       id="dashboard-header"
@@ -52,7 +61,7 @@ export function DashboardHeader({
             variant="outline"
             size="sm"
             onClick={onChatClick}
-            disabled={isLoading || !hasPlan}
+            disabled={actionDisabled}
             className="h-9 px-3 text-slate-700"
             title="Open Atlas assistant"
             aria-label="Open Atlas assistant"
@@ -67,7 +76,7 @@ export function DashboardHeader({
             variant="outline"
             size="sm"
             onClick={onRefresh}
-            disabled={isLoading}
+            disabled={refreshDisabled}
             className="h-9 px-3 text-slate-700"
             title="Refresh current plan from backend"
             aria-label="Refresh current plan"

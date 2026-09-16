@@ -1,8 +1,12 @@
 import { AskAiRequest, AskAiResponse } from '@/utils/types';
 
-export async function askAI(question: string): Promise<AskAiResponse> {
+export async function askAI(
+  question: string,
+  options?: { clientId?: string }
+): Promise<AskAiResponse> {
   const payload: AskAiRequest = {
     question,
+    ...(options?.clientId ? { clientId: options.clientId } : {}),
   };
 
   const response = await fetch('/api/ai-ask', {

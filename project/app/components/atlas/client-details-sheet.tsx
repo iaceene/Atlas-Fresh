@@ -9,6 +9,7 @@ import {
   SheetContent,
 } from '../ui/sheet';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import { ClientResult, AllocationRow } from '@/utils/types';
 import {
   formatTonnes,
@@ -32,6 +33,7 @@ interface ClientDetailsSheetProps {
   allocations: AllocationRow[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onAskAI?: (client: ClientResult) => void;
 }
 
 export function ClientDetailsSheet({
@@ -39,6 +41,7 @@ export function ClientDetailsSheet({
   allocations,
   open,
   onOpenChange,
+  onAskAI,
 }: ClientDetailsSheetProps) {
   if (!client) return null;
 
@@ -91,6 +94,23 @@ export function ClientDetailsSheet({
                 <p className="font-semibold text-amber-950">Shortage Cause</p>
                 <p className="mt-0.5">{formatShortageReason(client.reason)}</p>
               </div>
+            </div>
+          )}
+
+          {onAskAI && (
+            <div className="pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onAskAI(client)}
+                className="w-full justify-center border-emerald-200 text-emerald-800 hover:bg-emerald-50 hover:text-emerald-900"
+              >
+                Ask AI about this row
+              </Button>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Opens chat with this client selected as context.
+              </p>
             </div>
           )}
         </div>
