@@ -10,7 +10,7 @@ Make sure Bun is installed on your system.
 
 ```bash
 $> curl -fsSL https://bun.sh/install | bash
-$> ```
+```
 
 After installation, restart your terminal or reload your shell configuration if needed.
 
