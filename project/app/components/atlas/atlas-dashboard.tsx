@@ -43,17 +43,19 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
       } else {
         throw new Error(response.error || 'Failed to load plan');
       }
-    } catch (err: any) {
-      setError(err?.message || "Unable to load today's plan.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message || "Unable to load today's plan.");
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!initialPlan) {
-      loadPlan();
-    }
+    if (initialPlan) return;
+    (async () => {
+      await loadPlan();
+    })();
   }, [initialPlan, loadPlan]);
 
   const handleSelectClient = (client: ClientResult) => {
@@ -75,7 +77,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
         {isLoading && !plan ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-slate-500 pb-2">
-              <span className="animate-pulse font-medium">Fetching today's operations allocation plan...</span>
+              <span className="animate-pulse font-medium">Fetching today&apos;s operations allocation plan...</span>
             </div>
             <LoadingDashboard />
           </div>

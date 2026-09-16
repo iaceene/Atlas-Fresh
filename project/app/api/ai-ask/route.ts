@@ -7,9 +7,7 @@ import { createEngine } from '@/utils/engine/engine';
 const UNSUPPORTED_ANSWER =
   'That information is not available in the supplied inputs or computed plan.';
 
-type OllamaResponse = {
-  response?: string;
-};
+// Response shapes from external LLMs are handled dynamically below.
 
 function getQuestionTopic(question: string): 'risk' | 'gaps' | 'local' | null {
   const normalized = question.toLowerCase();
@@ -133,12 +131,16 @@ export async function POST(request: Request) {
 
     if (!question) {
       return NextResponse.json(
-        { success: false, error: 'A question is required.' },
+        {
+          success: false,
+          error: 'A question is required.',
+        },
         { status: 400 }
       );
     }
 
     const topic = getQuestionTopic(question);
+
     if (!topic) {
       return NextResponse.json({
         success: true,
@@ -148,35 +150,111 @@ export async function POST(request: Request) {
     }
 
     const context = buildGroundedContext(topic);
-    const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
-    const model = process.env.OLLAMA_MODEL || 'llama3.2:3b';
+
+    const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+    const token = process.env.LLM_TOKEN;
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 30_000);
 
     try {
-      const response = await fetch(`${ollamaUrl}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model,
-          stream: false,
-          system: `You are a read-only explanation layer for a deterministic allocation plan.
+      if (!token) {
+        throw new Error('Missing LLM token in environment (LLM_TOKEN)');
+      }
+
+      const endpoint =
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+      const systemPrompt = `You are a read-only explanation layer for a deterministic allocation plan.
 Answer only the user's supported question using the supplied JSON context.
-Every number, client ID, farm ID, and segment must come from the context.
-Do not calculate, allocate, recommend changes, confirm execution, or invent facts.
-Always cite resolvable client IDs, farm IDs, or segment labels.
-If the context does not support the answer, reply exactly: ${UNSUPPORTED_ANSWER}`,
-          prompt: `Question: ${question}\n\nGrounded context:\n${JSON.stringify(context)}`,
-        }),
+
+Rules:
+- Every number, client ID, farm ID, and segment must come from the context.
+- Do not calculate anything.
+- Do not allocate anything.
+- Do not recommend changes.
+- Do not confirm execution.
+- Do not invent facts.
+- Always cite resolvable client IDs, farm IDs, or segment labels.
+- If the context does not support the answer, reply exactly: ${UNSUPPORTED_ANSWER}`;
+
+      const userPrompt = `Question:
+${question}
+
+Grounded context:
+${JSON.stringify(context)}`;
+
+      const geminiRequest = {
+        system_instruction: {
+          parts: [
+            {
+              text: systemPrompt,
+            },
+          ],
+        },
+
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: userPrompt,
+              },
+            ],
+          },
+        ],
+
+        generationConfig: {
+          maxOutputTokens: 512,
+        },
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': token,
+        },
+
+        signal: controller.signal,
+
+        body: JSON.stringify(geminiRequest),
       });
 
       if (!response.ok) {
-        throw new Error(`Ollama returned HTTP ${response.status}`);
+        const errorBody = await response.text();
+
+        throw new Error(
+          `Gemini returned HTTP ${response.status}: ${errorBody}`
+        );
       }
 
-      const result = (await response.json()) as OllamaResponse;
-      const answer = result.response?.trim();
+      const result = await response.json();
+
+      let answer: string | undefined;
+
+      if (Array.isArray(result.candidates)) {
+        const firstCandidate = result.candidates[0];
+
+        if (firstCandidate?.content?.parts) {
+          answer = firstCandidate.content.parts
+            .filter(
+              (part: unknown): part is { text: string } =>
+                typeof part === 'object' &&
+                part !== null &&
+                'text' in part &&
+                typeof (part as { text?: unknown }).text === 'string'
+            )
+            .map((part: { text: string }) => part.text)
+            .join('')
+            .trim();
+        }
+      }
+
       if (!answer || containsUnknownIdentifiers(answer, context)) {
         return NextResponse.json({
           success: true,
@@ -188,19 +266,24 @@ If the context does not support the answer, reply exactly: ${UNSUPPORTED_ANSWER}
       return NextResponse.json({
         success: true,
         answer,
-        sources: [`Server plan: ${topic}`, `Ollama model: ${model}`],
+        sources: [
+          `Server plan: ${topic}`,
+          `Gemini model: ${model}`,
+        ],
       });
     } finally {
       clearTimeout(timeout);
     }
   } catch (error) {
+    console.log(error);
+
     return NextResponse.json(
       {
         success: false,
         error:
           error instanceof Error && error.name === 'AbortError'
-            ? 'Ollama did not respond within 30 seconds.'
-            : 'The assistant is unavailable. Start Ollama with model llama3.2:3b and try again.',
+            ? 'Gemini did not respond within 30 seconds.'
+            : 'The assistant is unavailable. Check your GEMINI_MODEL and LLM_TOKEN and try again.',
       },
       { status: 503 }
     );

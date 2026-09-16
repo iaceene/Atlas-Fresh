@@ -13,9 +13,10 @@ export async function GET() {
     const filePath = path.join(process.cwd(), 'public', 'Atlas_Fresh_Production_Commercial_Data.xlsx');
     return NextResponse.json({ success: true, plan: createPlan(filePath) });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Parsing failed' },
+      { success: false, error: message || 'Parsing failed' },
       { status: 500 }
     );
   }

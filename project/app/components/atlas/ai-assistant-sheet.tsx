@@ -35,7 +35,7 @@ const createWelcomeMessage = (): Message => ({
   id: 'welcome',
   role: 'assistant',
   content:
-    'I explain the server-computed plan using Ollama. I can answer questions about at-risk clients, farm and segment gaps, and local residuals.',
+    'I explain the server-computed plan using Google Gemini. I can answer questions about at-risk clients, farm and segment gaps, and local residuals.',
   timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
 });
 
@@ -54,22 +54,20 @@ export function AiAssistantSheet({
     () => `atlas-ai-chat:${plan.clients.map((client) => client.client_id).join(',')}:${plan.kpis.actual_received_t}`,
     [plan]
   );
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isStorageReady, setIsStorageReady] = useState(false);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
+      return stored ? JSON.parse(stored) : [createWelcomeMessage()];
+    } catch {
+      return [createWelcomeMessage()];
+    }
+  });
+  const [isStorageReady, setIsStorageReady] = useState(true);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      setMessages(stored ? JSON.parse(stored) : [createWelcomeMessage()]);
-    } catch {
-      setMessages([createWelcomeMessage()]);
-    } finally {
-      setIsStorageReady(true);
-    }
-  }, [storageKey]);
+  
 
   useEffect(() => {
     if (isStorageReady) {
@@ -109,8 +107,9 @@ export function AiAssistantSheet({
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'AI assistant couldn\'t answer right now.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMessage(message || 'AI assistant couldn\'t answer right now.');
     } finally {
       setIsLoading(false);
     }
