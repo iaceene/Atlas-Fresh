@@ -6,6 +6,7 @@ const UNSUPPORTED_ANSWER =
   'That information is not available in the supplied inputs or computed plan.';
 
 type Topic = 'risk' | 'gaps' | 'local';
+type GeneralTopic = Topic | 'general';
 
 type ValidationContext = {
   metadata: {
@@ -14,7 +15,7 @@ type ValidationContext = {
   };
 };
 
-function getQuestionTopic(question: string): Topic | null {
+function getQuestionTopic(question: string): GeneralTopic {
   const normalized = question.toLowerCase();
 
   if (
@@ -43,7 +44,7 @@ function getQuestionTopic(question: string): Topic | null {
     return 'local';
   }
 
-  return null;
+  return 'general';
 }
 
 function containsUnknownIdentifiers(answer: string, context: ValidationContext) {
@@ -53,6 +54,130 @@ function containsUnknownIdentifiers(answer: string, context: ValidationContext) 
     ...context.metadata.allowed_farm_ids,
   ]);
   return identifiers.some((identifier) => !allowed.has(identifier));
+}
+
+function formatNumber(value: number) {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(2).replace(/\.00$/, '');
+}
+
+function buildFallbackAnswer(
+  topic: Topic | 'general',
+  groundedContext: unknown
+): string | null {
+  if (topic === 'general') return null;
+  if (!groundedContext || typeof groundedContext !== 'object') return null;
+
+  const context = groundedContext as {
+    plan_summary?: {
+      expected_plan_t?: number;
+      actual_received_t?: number;
+      export_volume_t?: number;
+      local_volume_t?: number;
+      local_value_eur?: number;
+      at_risk_count?: number;
+    };
+    farm_segment_gaps?: Array<{
+      farm_id: string;
+      segment: string;
+      expected_t: number;
+      actual_t: number;
+      variance_t: number;
+    }>;
+    local_residuals?: Array<{
+      farm_id: string;
+      segment: string;
+      local_t: number;
+      local_value_eur: number;
+      reference_price_eur: number;
+    }>;
+  };
+
+  if (topic === 'gaps' && Array.isArray(context.farm_segment_gaps)) {
+    const topGaps = [...context.farm_segment_gaps]
+      .sort((a, b) => Math.abs(b.variance_t) - Math.abs(a.variance_t))
+      .slice(0, 5);
+
+    const lines = [
+      '### Farm and segment gaps',
+      'The largest gaps are the farm/segment pairs with the biggest variance between expected and actual tonnage.',
+      '',
+      ...topGaps.map(
+        (gap) =>
+          `- **${gap.farm_id} / ${gap.segment}**: expected ${formatNumber(gap.expected_t)} t, actual ${formatNumber(gap.actual_t)} t, variance ${gap.variance_t >= 0 ? '+' : ''}${formatNumber(gap.variance_t)} t`
+      ),
+    ];
+
+    const planSummary = context.plan_summary;
+    if (planSummary?.expected_plan_t !== undefined && planSummary?.actual_received_t !== undefined) {
+      lines.push(
+        '',
+        `**Plan summary:** expected ${formatNumber(planSummary.expected_plan_t)} t, actual received ${formatNumber(planSummary.actual_received_t)} t.`
+      );
+    }
+
+    return lines.join('\n');
+  }
+
+  if (topic === 'local' && Array.isArray(context.local_residuals)) {
+    const topResiduals = [...context.local_residuals]
+      .sort((a, b) => b.local_value_eur - a.local_value_eur)
+      .slice(0, 5);
+
+    const lines = [
+      '### Local fruit value',
+      'The supplied plan shows local residual tonnage on the farm/segment pairs below; the value is the estimated local market value recorded in the context.',
+      '',
+      ...topResiduals.map(
+        (row) =>
+          `- **${row.farm_id} / ${row.segment}**: ${formatNumber(row.local_t)} t local, estimated value €${formatNumber(row.local_value_eur)}`
+      ),
+    ];
+
+    const planSummary = context.plan_summary;
+    if (planSummary?.local_volume_t !== undefined && planSummary?.local_value_eur !== undefined) {
+      lines.push(
+        '',
+        `**Total local volume:** ${formatNumber(planSummary.local_volume_t)} t`,
+        `**Total local value:** €${formatNumber(planSummary.local_value_eur)}`
+      );
+    }
+
+    return lines.join('\n');
+  }
+
+  if (topic === 'risk' && Array.isArray((groundedContext as { clients_at_risk?: unknown[] }).clients_at_risk)) {
+    const riskContext = groundedContext as {
+      clients_at_risk: Array<{
+        client_id: string;
+        status: string;
+        reason: string | null;
+        allocated_t: number;
+        demand_t: number;
+        shortage_t: number;
+      }>;
+      plan_summary?: { at_risk_count?: number; complete_count?: number; total_clients?: number };
+    };
+
+    const topClients = [...riskContext.clients_at_risk].slice(0, 5);
+    const lines = [
+      '### At-risk clients',
+      'The plan identifies the following clients as not fully complete:',
+      '',
+      ...topClients.map(
+        (client) =>
+          `- **${client.client_id}**: ${client.status}, shortage ${formatNumber(client.shortage_t)} t${client.reason ? `, reason ${client.reason}` : ''}`
+      ),
+    ];
+
+    const planSummary = riskContext.plan_summary;
+    if (planSummary?.at_risk_count !== undefined) {
+      lines.push('', `**At-risk clients:** ${planSummary.at_risk_count}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  return null;
 }
 
 function buildRiskContext(atlasContext: Awaited<ReturnType<typeof getAtlasContext>>) {
@@ -186,6 +311,61 @@ function buildLocalContext(atlasContext: Awaited<ReturnType<typeof getAtlasConte
   };
 }
 
+function buildGeneralContext(atlasContext: Awaited<ReturnType<typeof getAtlasContext>>) {
+  const { data, plan, operations, source, contextId } = atlasContext;
+
+  return {
+    assistant_identity: 'Atlas Fresh operational planning assistant',
+    assistant_role:
+      'Answer casual questions and explain the current agricultural export plan using the supplied workspace context.',
+    current_context: {
+      context_id: contextId,
+      source_label: source.label,
+      source_kind: source.kind,
+      file_name: source.fileName ?? null,
+      created_at: source.createdAt,
+    },
+    plan_summary: {
+      expected_plan_t: Math.round(plan.kpis.expected_plan_t * 100) / 100,
+      actual_received_t: Math.round(plan.kpis.actual_received_t * 100) / 100,
+      export_volume_t: Math.round(plan.kpis.export_volume_t * 100) / 100,
+      local_volume_t: Math.round(plan.kpis.local_volume_t * 100) / 100,
+      export_rate: Math.round(plan.kpis.export_rate * 10000) / 10000,
+      station_capacity_t: Math.round(plan.kpis.station_capacity_t * 100) / 100,
+      total_clients: plan.clients.length,
+      total_farms: data.farms.length,
+      at_risk_count: plan.kpis.at_risk_clients,
+      export_revenue_eur: Math.round(plan.kpis.export_revenue_eur),
+      local_value_eur: Math.round(plan.kpis.local_value_eur),
+      total_value_eur: Math.round(plan.kpis.total_value_eur),
+    },
+    what_is_exported: {
+      top_allocations_by_revenue: [...plan.allocations]
+        .sort((a, b) => b.export_revenue_eur - a.export_revenue_eur)
+        .slice(0, 5)
+        .map((allocation) => ({
+          client_id: allocation.client_id,
+          farm_id: allocation.farm_id,
+          segment: allocation.segment,
+          tonnes: Math.round(allocation.tonnes * 100) / 100,
+          quality_upgrade: Math.round(allocation.quality_upgrade * 100) / 100,
+          export_revenue_eur: Math.round(allocation.export_revenue_eur),
+        })),
+    },
+    what_is_going_on_in_logs: operations.slice(-12).map((operation) => ({
+      step: operation.step,
+      kind: operation.kind,
+      message: operation.message,
+      data: operation.data,
+    })),
+    metadata: {
+      allowed_client_ids: data.clients.map((client) => client.client_id),
+      allowed_farm_ids: data.farms.map((farm) => farm.farm_id),
+      allowed_segments: ['A', 'B', 'C', 'D'] as const,
+    },
+  };
+}
+
 function buildClientContext(clientId: string, atlasContext: Awaited<ReturnType<typeof getAtlasContext>>) {
   const { data, plan, operations } = atlasContext;
   const client = plan.clients.find((item) => item.client_id === clientId);
@@ -252,12 +432,10 @@ export async function POST(request: Request) {
     }
 
     const topic = clientId ? 'risk' : getQuestionTopic(question);
-    if (!topic) {
-      return NextResponse.json({ success: true, answer: UNSUPPORTED_ANSWER, sources: [] });
-    }
 
     const atlasContext = await getAtlasContext(contextId);
     const clientContext = clientId ? buildClientContext(clientId, atlasContext) : null;
+    const generalContext = !clientId && topic === 'general' ? buildGeneralContext(atlasContext) : null;
     const groundedContext = clientId
       ? null
       : topic === 'risk'
@@ -275,7 +453,85 @@ export async function POST(request: Request) {
       );
     }
 
-    const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+    if (topic === 'general' && generalContext) {
+      const model = process.env.OPENROUTER_MODEL || 'openrouter/free';
+      const token = process.env.LLM_TOKEN;
+      if (!token) {
+        throw new Error('Missing LLM token in environment (LLM_TOKEN)');
+      }
+
+      const systemPrompt = `You are Atlas Fresh's operational planning assistant.
+You help with casual conversation and with questions about the current agricultural export plan.
+
+CORE RULES:
+1. Answer naturally and briefly when the user is just greeting or chatting
+2. When the user asks about the plan, use the provided Atlas Fresh context
+3. ONLY use the provided context for plan-specific details
+4. Do not reveal internal reasoning or chain-of-thought
+5. Use markdown if it improves clarity
+6. If you mention clients, farms, segments, exports, or logs, keep it grounded in the provided context`;
+
+      const userPrompt = `USER QUESTION: ${question}
+
+ATLAS FRESH CONTEXT:
+${JSON.stringify(generalContext, null, 2)}
+
+RESPONSE GUIDANCE:
+- If this is a casual question such as hello, greet the user naturally.
+- If this asks about Atlas Fresh, explain the current export plan, what is being exported, and what the latest log entries show.
+- Keep the answer concise, useful, and grounded in the context.`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.5,
+            max_tokens: 700,
+            top_p: 0.95,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(`OpenRouter returned HTTP ${response.status}: ${errorBody}`);
+        }
+
+        const result = await response.json();
+        const answer =
+          typeof result?.choices?.[0]?.message?.content === 'string'
+            ? result.choices[0].message.content.trim()
+            : '';
+
+        return NextResponse.json({
+          success: true,
+          answer:
+            answer ||
+            'Hello — I am the Atlas Fresh operational planning assistant. I can help with exports, client risk, farm/segment gaps, and log details.',
+          sources: [
+            'Data Source: Atlas Fresh General Context',
+            `Model: ${model}`,
+            `Generated: ${new Date().toISOString()}`,
+          ],
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    const model = process.env.OPENROUTER_MODEL || 'openrouter/free';
     const token = process.env.LLM_TOKEN;
     if (!token) {
       throw new Error('Missing LLM token in environment (LLM_TOKEN)');
@@ -333,53 +589,50 @@ REQUIRED: Answer ONLY based on the context above. Use markdown formatting with b
     const timeout = setTimeout(() => controller.abort(), 30_000);
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': token,
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-            generationConfig: {
-              maxOutputTokens: 1024,
-              temperature: 0.3,
-              topP: 0.95,
-              topK: 40,
-            },
-          }),
-        }
-      );
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 1024,
+          top_p: 0.95,
+        }),
+      });
 
       if (!response.ok) {
         const errorBody = await response.text();
-        throw new Error(`Gemini returned HTTP ${response.status}: ${errorBody}`);
+        throw new Error(`OpenRouter returned HTTP ${response.status}: ${errorBody}`);
       }
 
       const result = await response.json();
-      const answer = Array.isArray(result.candidates)
-        ? result.candidates[0]?.content?.parts
-            ?.filter(
-              (part: unknown): part is { text: string } =>
-                typeof part === 'object' &&
-                part !== null &&
-                'text' in part &&
-                typeof (part as { text?: unknown }).text === 'string'
-            )
-            .map((part: { text: string }) => part.text)
-            .join('')
-            .trim()
-        : '';
+      const answer =
+        typeof result?.choices?.[0]?.message?.content === 'string'
+          ? result.choices[0].message.content.trim()
+          : '';
 
       if (!answer) {
+        const fallbackAnswer = buildFallbackAnswer(topic, groundedContext);
+        if (fallbackAnswer) {
+          return NextResponse.json({
+            success: true,
+            answer: fallbackAnswer,
+            sources: ['Fallback summary from computed plan'],
+          });
+        }
+
         return NextResponse.json({
           success: true,
           answer: UNSUPPORTED_ANSWER,
-          sources: ['Gemini returned empty response'],
+          sources: ['OpenRouter returned empty response'],
         });
       }
 
@@ -392,6 +645,15 @@ REQUIRED: Answer ONLY based on the context above. Use markdown formatting with b
         : /\b(?:local|residual|market|F\d+|segment|EUR|value|[0-9]+\.?[0-9]*)\b/i.test(answer);
 
       if (!validationContext || !hasRelevantData || containsUnknownIdentifiers(answer, validationContext)) {
+        const fallbackAnswer = buildFallbackAnswer(topic, groundedContext);
+        if (fallbackAnswer) {
+          return NextResponse.json({
+            success: true,
+            answer: fallbackAnswer,
+            sources: ['Fallback summary from computed plan'],
+          });
+        }
+
         return NextResponse.json({
           success: true,
           answer: UNSUPPORTED_ANSWER,
@@ -404,6 +666,7 @@ REQUIRED: Answer ONLY based on the context above. Use markdown formatting with b
         gaps: 'Farm & Segment Gap Analysis',
         local: 'Local Market Residuals',
       };
+      const topicLabel = topic === 'general' ? 'Atlas Fresh General Conversation' : topicLabels[topic];
 
       let totalDataPoints = 0;
       if (clientId) {
@@ -420,7 +683,7 @@ REQUIRED: Answer ONLY based on the context above. Use markdown formatting with b
         success: true,
         answer,
         sources: [
-          clientId ? 'Data Source: Client Fulfillment Detail' : `Data Source: ${topicLabels[topic]}`,
+          clientId ? 'Data Source: Client Fulfillment Detail' : `Data Source: ${topicLabel}`,
           ...(clientId ? [`Selected Client: ${clientId}`] : []),
           `Total Data Points: ${totalDataPoints}`,
           `Model: ${model}`,
@@ -437,7 +700,7 @@ REQUIRED: Answer ONLY based on the context above. Use markdown formatting with b
         success: false,
         error:
           error instanceof Error && error.name === 'AbortError'
-            ? 'Gemini did not respond within 30 seconds.'
+            ? 'OpenRouter did not respond within 30 seconds.'
             : 'The assistant is unavailable.',
       },
       { status: 503 }
