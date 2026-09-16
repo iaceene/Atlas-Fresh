@@ -40,7 +40,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
   const [aiContextQuestion, setAiContextQuestion] = useState<string | null>(null);
   const [aiContextClientId, setAiContextClientId] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<ClientResult | null>(null);
-  const [activeTab, setActiveTab] = useState('clients');
+  const [activeTab, setActiveTab] = useState('overview');
 
   // Fetch plan from Next.js API /api/data
   const loadPlan = useCallback(async (targetContextId?: string | null) => {
@@ -53,7 +53,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
         const resolvedContextId = response.contextId ?? targetContextId ?? null;
         setContextId(resolvedContextId);
         setSourceLabel(response.source?.label || (resolvedContextId ? 'Loaded workbook' : 'Preloaded workbook'));
-        setActiveTab('clients');
+        setActiveTab('overview');
         if (resolvedContextId) {
           window.localStorage.setItem(CONTEXT_STORAGE_KEY, resolvedContextId);
         }
@@ -105,7 +105,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
       setPlan(response.plan);
       setContextId(response.contextId ?? null);
       setSourceLabel(response.source?.label || file.name);
-      setActiveTab('clients');
+      setActiveTab('overview');
 
       if (response.contextId) {
         window.localStorage.setItem(CONTEXT_STORAGE_KEY, response.contextId);
@@ -171,6 +171,10 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
               <div className="border-b border-slate-200 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <TabsList className="h-10">
+                  <TabsTrigger value="overview" className="gap-2">
+                    <LayoutDashboard className="h-4 w-4" />
+                    <span>Overview</span>
+                  </TabsTrigger>
                   <TabsTrigger value="clients" className="gap-2">
                     <Users className="h-4 w-4" />
                     <span>Clients</span>
@@ -192,10 +196,6 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                       {plan.farmSegmentBalances.length}
                     </span>
                   </TabsTrigger>
-                  <TabsTrigger value="overview" className="gap-2">
-                    <LayoutDashboard className="h-4 w-4" />
-                    <span>Overview</span>
-                  </TabsTrigger>
                 </TabsList>
 
                 <div className="text-xs text-slate-500 flex items-center gap-2">
@@ -207,7 +207,22 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                 </div>
               </div>
 
-              {/* TAB 1: CLIENTS */}
+              {/* TAB 1: OVERVIEW */}
+              <TabsContent value="overview" className="space-y-6 mt-0">
+                {/* At-Risk Clients Warning Banner */}
+                <AtRiskClients
+                  clients={plan.clients}
+                  onSelectClient={handleSelectClient}
+                />
+
+                {/* Grid: Quality Distribution & Export Summary */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <QualityDistribution kpis={plan.kpis} />
+                  <ExportSummary kpis={plan.kpis} />
+                </div>
+              </TabsContent>
+
+              {/* TAB 2: CLIENTS */}
               <TabsContent value="clients" className="space-y-4 mt-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                   <div>
@@ -226,7 +241,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                 />
               </TabsContent>
 
-              {/* TAB 2: ALLOCATIONS */}
+              {/* TAB 3: ALLOCATIONS */}
               <TabsContent value="allocations" className="space-y-4 mt-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                   <div>
@@ -245,7 +260,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                 />
               </TabsContent>
 
-              {/* TAB 3: FARM BALANCES */}
+              {/* TAB 4: FARM BALANCES */}
               <TabsContent value="farms" className="space-y-4 mt-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                   <div>
@@ -259,46 +274,6 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                 </div>
 
                 <FarmBalanceTable balances={plan.farmSegmentBalances} />
-              </TabsContent>
-
-              {/* TAB 4: OVERVIEW */}
-              <TabsContent value="overview" className="space-y-6 mt-0">
-                {/* At-Risk Clients Warning Banner */}
-                <AtRiskClients
-                  clients={plan.clients}
-                  onSelectClient={handleSelectClient}
-                />
-
-                {/* Grid: Quality Distribution & Export Summary */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <QualityDistribution kpis={plan.kpis} />
-                  <ExportSummary kpis={plan.kpis} />
-                </div>
-
-                {/* Quick Client Fulfillment Snapshot */}
-                <div className="space-y-3 pt-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900">
-                        Client Fulfillment Overview
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        Export orders sorted by demand and delivery status
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('clients')}
-                      className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer"
-                    >
-                      View all client filters & details →
-                    </button>
-                  </div>
-                  <ClientTable
-                    clients={plan.clients}
-                    onSelectClient={handleSelectClient}
-                  />
-                </div>
               </TabsContent>
             </Tabs>
           </div>
