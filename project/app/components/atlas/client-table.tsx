@@ -6,8 +6,8 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { ClientFilters, ClientFiltersState } from './client-filters';
 import { Pagination } from './pagination';
-import { formatTonnes, formatCurrency, formatShortageReason } from '@/lib/formatters';
-import { CheckCircle2, Clock, CircleX, AlertCircle, ChevronRight } from 'lucide-react';
+import { formatTonnes, formatCurrency } from '@/lib/formatters';
+import { CheckCircle2, Clock, CircleX, ChevronRight } from 'lucide-react';
 
 interface ClientTableProps {
   clients: ClientResult[];
@@ -210,16 +210,6 @@ export function ClientTable({ clients, onSelectClient }: ClientTableProps) {
                             {isUnserved && <CircleX className="h-3 w-3 mr-1" />}
                             {client.status}
                           </Badge>
-
-                          {/* Show reason when status is PARTIAL or UNSERVED */}
-                          {(isPartial || isUnserved) && client.reason && (
-                            <span className="text-[11px] text-amber-800/90 leading-tight flex items-center gap-1 font-normal">
-                              <AlertCircle className="h-3 w-3 shrink-0 text-amber-600" />
-                              <span className="truncate max-w-[180px]" title={formatShortageReason(client.reason)}>
-                                {formatShortageReason(client.reason)}
-                              </span>
-                            </span>
-                          )}
                         </div>
                       </td>
 

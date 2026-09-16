@@ -19,6 +19,21 @@ export function Sheet({
   side = 'right',
   className,
 }: SheetProps) {
+  const [isMounted, setIsMounted] = React.useState(open);
+  const [isVisible, setIsVisible] = React.useState(open);
+
+  React.useEffect(() => {
+    if (open) {
+      setIsMounted(true);
+      const frame = window.requestAnimationFrame(() => setIsVisible(true));
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    setIsVisible(false);
+    const timer = window.setTimeout(() => setIsMounted(false), 300);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && open) {
@@ -37,13 +52,16 @@ export function Sheet({
     };
   }, [open, onOpenChange]);
 
-  if (!open) return null;
+  if (!isMounted) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-200"
+        className={cn(
+          'fixed inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300 ease-out',
+          isVisible ? 'opacity-100' : 'opacity-0'
+        )}
         onClick={() => onOpenChange(false)}
         aria-hidden="true"
       />
@@ -53,8 +71,12 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         className={cn(
-          'fixed inset-y-0 z-50 flex h-full w-full max-w-lg flex-col bg-white shadow-2xl transition-transform duration-300 ease-in-out border-l border-slate-200',
-          side === 'right' ? 'right-0' : 'left-0 border-r border-l-0',
+          'fixed inset-y-0 z-50 flex h-full w-full max-w-lg flex-col bg-white shadow-2xl border-l border-slate-200 transition-all duration-300 ease-out',
+          side === 'right' ? 'right-0 border-l' : 'left-0 border-r',
+          side === 'right'
+            ? isVisible ? 'translate-x-0' : 'translate-x-full'
+            : isVisible ? 'translate-x-0' : '-translate-x-full',
+          isVisible ? 'opacity-100' : 'opacity-0',
           className
         )}
       >

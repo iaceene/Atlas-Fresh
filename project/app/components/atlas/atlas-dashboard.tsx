@@ -40,7 +40,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
   const [aiContextQuestion, setAiContextQuestion] = useState<string | null>(null);
   const [aiContextClientId, setAiContextClientId] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<ClientResult | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('clients');
 
   // Fetch plan from Next.js API /api/data
   const loadPlan = useCallback(async (targetContextId?: string | null) => {
@@ -53,6 +53,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
         const resolvedContextId = response.contextId ?? targetContextId ?? null;
         setContextId(resolvedContextId);
         setSourceLabel(response.source?.label || (resolvedContextId ? 'Loaded workbook' : 'Preloaded workbook'));
+        setActiveTab('clients');
         if (resolvedContextId) {
           window.localStorage.setItem(CONTEXT_STORAGE_KEY, resolvedContextId);
         }
@@ -74,8 +75,11 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
 
     const savedContextId = window.localStorage.getItem(CONTEXT_STORAGE_KEY);
     if (savedContextId) {
-      void loadPlan(savedContextId);
-      return;
+      const timer = window.setTimeout(() => {
+        void loadPlan(savedContextId);
+      }, 0);
+
+      return () => window.clearTimeout(timer);
     }
 
     setIsReady(true);
@@ -101,7 +105,7 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
       setPlan(response.plan);
       setContextId(response.contextId ?? null);
       setSourceLabel(response.source?.label || file.name);
-      setActiveTab('overview');
+      setActiveTab('clients');
 
       if (response.contextId) {
         window.localStorage.setItem(CONTEXT_STORAGE_KEY, response.contextId);
@@ -167,10 +171,6 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
               <div className="border-b border-slate-200 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <TabsList className="h-10">
-                  <TabsTrigger value="overview" className="gap-2">
-                    <LayoutDashboard className="h-4 w-4" />
-                    <span>Overview</span>
-                  </TabsTrigger>
                   <TabsTrigger value="clients" className="gap-2">
                     <Users className="h-4 w-4" />
                     <span>Clients</span>
@@ -192,6 +192,10 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                       {plan.farmSegmentBalances.length}
                     </span>
                   </TabsTrigger>
+                  <TabsTrigger value="overview" className="gap-2">
+                    <LayoutDashboard className="h-4 w-4" />
+                    <span>Overview</span>
+                  </TabsTrigger>
                 </TabsList>
 
                 <div className="text-xs text-slate-500 flex items-center gap-2">
@@ -203,7 +207,61 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                 </div>
               </div>
 
-              {/* TAB 1: OVERVIEW */}
+              {/* TAB 1: CLIENTS */}
+              <TabsContent value="clients" className="space-y-4 mt-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">
+                      Client Fulfillment & Contract Allocations
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Click any client row to inspect individual orchard supplies, segment upgrades, and pricing.
+                    </p>
+                  </div>
+                </div>
+
+                <ClientTable
+                  clients={plan.clients}
+                  onSelectClient={handleSelectClient}
+                />
+              </TabsContent>
+
+              {/* TAB 2: ALLOCATIONS */}
+              <TabsContent value="allocations" className="space-y-4 mt-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">
+                      Detailed Orchard-to-Client Allocations
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Trace every exported tonne from farm origin and quality segment to destination customer.
+                    </p>
+                  </div>
+                </div>
+
+                <AllocationTable
+                  allocations={plan.allocations}
+                  clients={plan.clients}
+                />
+              </TabsContent>
+
+              {/* TAB 3: FARM BALANCES */}
+              <TabsContent value="farms" className="space-y-4 mt-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">
+                      Farm Harvest Balances & Local Market Flow
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      View intake totals, exported volumes, and local market overflows by orchard and segment.
+                    </p>
+                  </div>
+                </div>
+
+                <FarmBalanceTable balances={plan.farmSegmentBalances} />
+              </TabsContent>
+
+              {/* TAB 4: OVERVIEW */}
               <TabsContent value="overview" className="space-y-6 mt-0">
                 {/* At-Risk Clients Warning Banner */}
                 <AtRiskClients
@@ -241,60 +299,6 @@ export function AtlasDashboard({ initialPlan }: AtlasDashboardProps) {
                     onSelectClient={handleSelectClient}
                   />
                 </div>
-              </TabsContent>
-
-              {/* TAB 2: CLIENTS */}
-              <TabsContent value="clients" className="space-y-4 mt-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">
-                      Client Fulfillment & Contract Allocations
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Click any client row to inspect individual orchard supplies, segment upgrades, and pricing.
-                    </p>
-                  </div>
-                </div>
-
-                <ClientTable
-                  clients={plan.clients}
-                  onSelectClient={handleSelectClient}
-                />
-              </TabsContent>
-
-              {/* TAB 3: ALLOCATIONS */}
-              <TabsContent value="allocations" className="space-y-4 mt-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">
-                      Detailed Orchard-to-Client Allocations
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Trace every exported tonne from farm origin and quality segment to destination customer.
-                    </p>
-                  </div>
-                </div>
-
-                <AllocationTable
-                  allocations={plan.allocations}
-                  clients={plan.clients}
-                />
-              </TabsContent>
-
-              {/* TAB 4: FARM BALANCES */}
-              <TabsContent value="farms" className="space-y-4 mt-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">
-                      Farm Harvest Balances & Local Market Flow
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      View intake totals, exported volumes, and local market overflows by orchard and segment.
-                    </p>
-                  </div>
-                </div>
-
-                <FarmBalanceTable balances={plan.farmSegmentBalances} />
               </TabsContent>
             </Tabs>
           </div>
