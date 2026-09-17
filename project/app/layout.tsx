@@ -11,6 +11,11 @@ export const metadata: Metadata = {
     description: 'Operations planning dashboard for daily apple export allocations, quality distribution, farm balances, client fulfillment, and AI planning assistant.',
     type: 'website',
   },
+  icons: {
+    icon: '/favicon.png',
+    shortcut: '/favicon.png',
+    apple: '/favicon.png',
+  },
 };
 
 export default function RootLayout({
